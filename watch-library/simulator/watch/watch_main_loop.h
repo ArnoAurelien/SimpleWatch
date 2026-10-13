@@ -30,6 +30,8 @@ void resume_main_loop(void);
 
 void main_loop_sleep(uint32_t ms);
 
+void main_loop_wait_for_interrupt(void);
+
 bool main_loop_is_sleeping(void);
 
 void delay_ms(const uint16_t ms);

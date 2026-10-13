@@ -23,6 +23,7 @@
  */
 
 #include "watch_extint.h"
+#include "watch_main_loop.h"
 
 // this warning only appears when you `make BOARD=OSO-SWAT-A1-02`. it's annoying,
 // but i'd rather have it warn us at build-time than fail silently at run-time.
@@ -32,7 +33,6 @@
 #endif
 
 static uint32_t watch_backup_data[8];
-
 void watch_register_extwake_callback(uint8_t pin, ext_irq_cb_t callback, bool level) {
     if (pin == BTN_ALARM) {
         watch_enable_external_interrupts();
@@ -61,10 +61,11 @@ uint32_t watch_get_backup_data(uint8_t reg) {
 }
 
 void watch_enter_sleep_mode(void) {
-    // TODO: (a2) hook to UI
-
-    // enter standby (4); we basically hang out here until an interrupt wakes us.
-    // sleep(4);
+    watch_rtc_disable_all_periodic_callbacks();
+    watch_register_interrupt_callback(BTN_MODE, NULL, INTERRUPT_TRIGGER_NONE);
+    watch_register_interrupt_callback(BTN_LIGHT, NULL, INTERRUPT_TRIGGER_NONE);
+    // Suspend the C runloop until a wake input or RTC alarm resolves it.
+    main_loop_wait_for_interrupt();
 
     // call app_setup so the app can re-enable everything we disabled.
     app_setup();

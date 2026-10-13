@@ -127,11 +127,13 @@ void watch_rtc_disable_all_periodic_callbacks(void) {
 
 static void watch_invoke_alarm_interval_callback(void *userData) {
     if (alarm_callback) alarm_callback();
+    resume_main_loop();
 }
 
 static void watch_invoke_alarm_callback(void *userData) {
     if (alarm_callback) alarm_callback();
     alarm_interval_id = emscripten_set_interval(watch_invoke_alarm_interval_callback, alarm_interval, NULL);
+    resume_main_loop();
 }
 
 void watch_rtc_register_alarm_callback(ext_irq_cb_t callback, watch_date_time alarm_time, watch_rtc_alarm_match mask) {
