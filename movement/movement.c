@@ -717,8 +717,15 @@ void cb_fast_tick(void) {
     }
 }
 
+uint32_t movement_get_tick_count(void) {
+    return movement_state.tick_count;
+}
+
 void cb_tick(void) {
-    event.event_type = EVENT_TICK;
+    movement_state.tick_count++;
+    // Preserve pending button events when the simulator renders slower than the RTC.
+    if (event.event_type == EVENT_NONE || event.event_type == EVENT_TICK)
+        event.event_type = EVENT_TICK;
     watch_date_time date_time = watch_rtc_get_date_time();
     if (date_time.unit.second != movement_state.last_second) {
         // TODO: can we consolidate these two ticks?
