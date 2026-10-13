@@ -1,7 +1,19 @@
 #include <stdio.h>
 #include <string.h>
-#include "../watch_faces/clock/travel_clock_face.c"
+#include "france_clock_face.h"
+#include "finland_clock_face.h"
+#include "full_date_face.h"
+#include "watch_utility.h"
+#include <stdlib.h>
 #include <assert.h>
+
+#define HOLD_TICKS (3 * 64)
+#define WINDOW_TICKS (15 * 64)
+
+static const watch_face_t faces[] = {france_clock_face, finland_clock_face, full_date_face};
+static const watch_face_t *active_face;
+static travel_clock_state_t state;
+static uint8_t active_face_position;
 
 static int next_face = -1;
 static int led_calls;
@@ -19,6 +31,7 @@ const int16_t movement_timezone_offsets[] = {0, 60, 120, 180};
 
 void movement_request_tick_frequency(uint8_t hz) { frequency = hz; }
 void movement_move_to_face(uint8_t index) { next_face = index; }
+void movement_move_to_next_face(void) { next_face = (active_face_position + 1) % 3; }
 void movement_illuminate_led(void) { led_calls++; }
 bool movement_default_loop_handler(movement_event_t e, movement_settings_t *s) { (void)e; (void)s; return true; }
 watch_date_time watch_rtc_get_date_time(void) { return rtc; }
@@ -30,7 +43,6 @@ void watch_stop_tick_animation(void) {}
 void watch_display_string(char *s, uint8_t pos) { for (; *s && pos < 10; pos++) screen[pos] = *s++; }
 
 static movement_settings_t settings;
-static travel_clock_state_t state;
 static void send(uint8_t type) {
     if (type == EVENT_MODE_BUTTON_DOWN) pins |= 1;
     if (type == EVENT_LIGHT_BUTTON_DOWN) pins |= 2;
@@ -39,13 +51,14 @@ static void send(uint8_t type) {
     if (type == EVENT_LIGHT_BUTTON_UP || type == EVENT_LIGHT_LONG_UP) pins &= ~2;
     if (type == EVENT_ALARM_BUTTON_UP || type == EVENT_ALARM_LONG_UP) pins &= ~4;
     movement_event_t e = {.event_type = type};
-    travel_clock_face_loop(e, &settings, &state);
+    active_face->loop(e, &settings, &state);
 }
 static void ticks(int count) { while (count--) { tick_count++; send(EVENT_TICK); } }
 static void fresh(uint8_t index) {
-    memset(&state, 0, sizeof(state)); state.index = index;
+    memset(&state, 0, sizeof(state)); active_face_position = index;
+    active_face = &faces[index];
     next_face = -1; led_calls = 0; pins = 0;
-    travel_clock_face_activate(&settings, &state);
+    active_face->activate(&settings, &state);
 }
 static void hold(uint8_t down, uint8_t up, int duration) {
     send(down); ticks(duration); send(up);
@@ -118,11 +131,23 @@ int main(void) {
         settings.bit.le_interval = interval;
         for (uint8_t index = 0; index < 3; index++) {
             void *context = NULL;
-            travel_clock_face_setup(&settings, index, &context);
-            travel_clock_face_activate(&settings, context);
+            faces[index].setup(&settings, index, &context);
+            faces[index].activate(&settings, context);
             assert(settings.bit.le_interval == interval);
             free(context);
         }
+    }
+    // Named faces retain their identity when assigned different carousel positions.
+    for (uint8_t identity = 0; identity < 3; identity++) {
+        void *context = NULL;
+        uint8_t position = (identity + 1) % 3;
+        faces[identity].setup(&settings, position, &context);
+        faces[identity].activate(&settings, context);
+        movement_event_t e = {.event_type = EVENT_ACTIVATE};
+        faces[identity].loop(e, &settings, context);
+        assert(strcmp(screen, identity == 0 ? "FR  010000" :
+                              identity == 1 ? "FI  020000" : "TH 1012026") == 0);
+        free(context);
     }
     // Sleeping views update without lighting LEDs or enabling faster ticks.
     for (uint8_t index = 0; index < 3; index++) {

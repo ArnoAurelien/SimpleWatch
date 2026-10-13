@@ -1,21 +1,10 @@
 #include <stdlib.h>
-#include "travel_clock_face.h"
+#include "travel_clock.h"
 #include "watch_utility.h"
 
 #define UNLOCK_HZ 64
 #define HOLD_TICKS (3 * UNLOCK_HZ)
 #define WINDOW_TICKS (15 * UNLOCK_HZ)
-#define SETTINGS_FACE 3
-
-typedef struct {
-    uint8_t index;
-    uint8_t step;
-    uint8_t pressed;
-    bool active;
-    bool failed;
-    uint32_t started_tick;
-    uint32_t down_tick;
-} travel_clock_state_t;
 
 static void reset_unlock(travel_clock_state_t *state) {
     state->active = false;
@@ -35,34 +24,26 @@ static bool summer_time(uint32_t timestamp) {
     return timestamp >= start && timestamp < end;
 }
 
-static void display(travel_clock_state_t *state, movement_settings_t *settings, bool low_energy) {
+watch_date_time travel_clock_local_time(movement_settings_t *settings, uint8_t standard_offset) {
     watch_date_time rtc = watch_rtc_get_date_time();
     uint32_t utc = watch_utility_date_time_to_unix_time(rtc, movement_timezone_offsets[settings->bit.time_zone] * 60);
-    int offset = (state->index == 1 ? 2 : 1) + summer_time(utc);
-    watch_date_time local = watch_utility_date_time_from_unix_time(utc, offset * 3600);
+    return watch_utility_date_time_from_unix_time(utc, (standard_offset + summer_time(utc)) * 3600);
+}
+
+void travel_clock_display_time(const char *label, watch_date_time local, bool low_energy) {
     char buf[16];
-    if (state->index == 2) {
-        watch_clear_colon();
-        sprintf(buf, "%s%2u%02u%04u", watch_utility_get_weekday(local),
-                local.unit.day, local.unit.month, local.unit.year + WATCH_RTC_REFERENCE_YEAR);
-    } else {
-        watch_set_colon();
-        sprintf(buf, "%s  %02u%02u%02u", state->index == 0 ? "FR" : "FI",
-                local.unit.hour, local.unit.minute, local.unit.second);
-        // The sleeping RTC updates once a minute; don't show stale seconds.
-        if (low_energy) buf[8] = buf[9] = ' ';
-    }
+    watch_set_colon();
+    sprintf(buf, "%s  %02u%02u%02u", label, local.unit.hour, local.unit.minute, local.unit.second);
+    // The sleeping RTC updates once a minute; don't show stale seconds.
+    if (low_energy) buf[8] = buf[9] = ' ';
     watch_display_string(buf, 0);
 }
 
-void travel_clock_face_setup(movement_settings_t *settings, uint8_t index, void **context) {
-    (void)settings;
+void travel_clock_setup(void **context) {
     if (*context == NULL) *context = calloc(1, sizeof(travel_clock_state_t));
-    ((travel_clock_state_t *)*context)->index = index;
 }
 
-void travel_clock_face_activate(movement_settings_t *settings, void *context) {
-    (void)settings;
+void travel_clock_activate(void *context) {
     travel_clock_state_t *state = context;
     state->pressed = 0;
     reset_unlock(state);
@@ -70,7 +51,7 @@ void travel_clock_face_activate(movement_settings_t *settings, void *context) {
     if (watch_tick_animation_is_running()) watch_stop_tick_animation();
 }
 
-bool travel_clock_face_loop(movement_event_t event, movement_settings_t *settings, void *context) {
+bool travel_clock_handle_event(movement_event_t event, movement_settings_t *settings, void *context) {
     travel_clock_state_t *state = context;
     uint32_t now = movement_get_tick_count();
     if (state->active && now - state->started_tick >= WINDOW_TICKS) reset_unlock(state);
@@ -118,15 +99,15 @@ bool travel_clock_face_loop(movement_event_t event, movement_settings_t *setting
             if (button == (1u << state->step) && now - state->down_tick >= HOLD_TICKS) {
                 if (++state->step == 3) {
                     reset_unlock(state);
-                    movement_move_to_face(SETTINGS_FACE);
-                    return true;
+                    movement_move_to_face(TRAVEL_CLOCK_SETTINGS_FACE_INDEX);
+                    return false;
                 }
             } else {
                 bool normal_mode = state->step == 0 && button == 1;
                 reset_unlock(state);
                 if (normal_mode) {
-                    movement_move_to_face((state->index + 1) % 3);
-                    return true;
+                    movement_move_to_next_face();
+                    return false;
                 }
             }
         }
@@ -139,13 +120,10 @@ bool travel_clock_face_loop(movement_event_t event, movement_settings_t *setting
         state->pressed = 0;
         state->failed = false;
     }
-    if (event.event_type == EVENT_ACTIVATE || event.event_type == EVENT_LOW_ENERGY_UPDATE ||
-        (event.event_type == EVENT_TICK && (!state->active || event.subsecond == 0)))
-        display(state, settings, event.event_type == EVENT_LOW_ENERGY_UPDATE);
-    return true;
+    return event.event_type == EVENT_ACTIVATE || event.event_type == EVENT_LOW_ENERGY_UPDATE ||
+           (event.event_type == EVENT_TICK && (!state->active || event.subsecond == 0));
 }
 
-void travel_clock_face_resign(movement_settings_t *settings, void *context) {
-    (void)settings;
+void travel_clock_resign(void *context) {
     reset_unlock(context);
 }

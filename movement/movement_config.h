@@ -28,16 +28,16 @@
 #include "movement_faces.h"
 
 const watch_face_t watch_faces[] = {
-    travel_clock_face, // France
-    travel_clock_face, // Finland
-    travel_clock_face, // Full date (France)
+    france_clock_face,
+    finland_clock_face,
+    full_date_face,
     set_time_face     // Accessible only through the unlock sequence
 };
 
 #define MOVEMENT_NUM_FACES (sizeof(watch_faces) / sizeof(watch_face_t))
 
 // Keep the time/date editor outside the normal three-face rotation.
-#define MOVEMENT_SECONDARY_FACE_INDEX 3
+#define MOVEMENT_SECONDARY_FACE_INDEX TRAVEL_CLOCK_SETTINGS_FACE_INDEX
 
 /* Custom hourly chime tune. Check movement_custom_signal_tunes.h for options. */
 #define SIGNAL_TUNE_DEFAULT

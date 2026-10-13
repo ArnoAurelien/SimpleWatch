@@ -2,6 +2,8 @@
 
 The default firmware has three everyday views: France (`FR`), Finland (`FI`), and the France-local date. Time is displayed in 24-hour format; the date uses weekday, day without a leading zero, two-digit month, and four-digit year. France and Finland automatically follow the current European summer-time rule: last Sunday of March through last Sunday of October, with both transitions at 01:00 UTC ([Council reference](https://data.consilium.europa.eu/doc/document/ST-14195-2025-INIT/en/pdf)).
 
+Each view has its own implementation: `france_clock_face.c`, `finland_clock_face.c`, and `full_date_face.c`. They share time conversion and button/unlock helpers in `travel_clock.c`. Display identity is independent of carousel position.
+
 MODE cycles the three views. ALARM has no everyday action. LIGHT illuminates the LED, including during the unlock sequence. The normal light duration and colors still apply. The original deep-sleep timeout is enabled, and faces preserve the configured sleep interval. In low-energy mode, time views update once a minute with seconds blank; the date remains visible. ALARM wakes the watch using Movement's existing wake behavior.
 
 To open the unchanged time/date editor, hold MODE for at least three seconds and release, then hold LIGHT for at least three seconds and release, then hold ALARM for at least three seconds and release. Complete the sequence within fifteen seconds of the initial MODE press. An incorrect button, too-short hold, overlapping press, or timeout resets the attempt. Release all buttons before retrying. A MODE press shorter than three seconds cycles views when no sequence is already underway. Releasing the final ALARM before entering the editor also prevents its hold from accidentally changing the time.
@@ -17,7 +19,7 @@ python3 -m http.server 8000 --directory movement/make/build-sim
 
 Open http://localhost:8000/watch.html. Keyboard shortcuts: `m` for MODE, `l` for LIGHT, `a` for ALARM.
 
-Run deterministic tests for exact hold/window boundaries, wrong order, overlaps, reset/retry, coalesced foreground ticks, all view layouts, preserved sleep settings, sleeping display updates, leap day, year rollover, summer-time transitions and non-UTC RTC settings:
+Run deterministic tests for exact hold/window boundaries, wrong order, overlaps, reset/retry, coalesced foreground ticks, all view layouts, face identity after reordering, preserved sleep settings, sleeping display updates, leap day, year rollover, summer-time transitions and non-UTC RTC settings:
 
 ```sh
 emmake make -C movement/tests COLOR=GREEN test
