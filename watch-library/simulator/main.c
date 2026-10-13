@@ -34,6 +34,7 @@
 #define ANIMATION_FRAME_ID_SUSPENDED (-2)
 
 static bool sleeping = true;
+static bool waiting_for_interrupt;
 static volatile long animation_frame_id = ANIMATION_FRAME_ID_INVALID;
 
 // make compiler happy
@@ -71,7 +72,27 @@ static EM_BOOL main_loop(double time, void *userData) {
     return EM_FALSE;
 }
 
+EM_ASYNC_JS(void, watch_simulator_wait_for_interrupt, (), {
+    await new Promise(resolve => { Module['interruptResolve'] = resolve; });
+});
+
+void main_loop_wait_for_interrupt(void) {
+    waiting_for_interrupt = true;
+    watch_simulator_wait_for_interrupt();
+    waiting_for_interrupt = false;
+}
+
 void resume_main_loop(void) {
+    if (waiting_for_interrupt) {
+        EM_ASM({
+            const resolve = Module['interruptResolve'];
+            if (resolve) {
+                Module['interruptResolve'] = null;
+                resolve();
+            }
+        });
+        return;
+    }
     if (!ANIMATION_FRAME_ID_IS_VALID(animation_frame_id)) {
         animation_frame_id = emscripten_request_animation_frame(main_loop, NULL);
     }

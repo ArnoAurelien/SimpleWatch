@@ -276,6 +276,7 @@ typedef struct {
     int16_t timeout_ticks;
 
     // stuff for subsecond tracking
+    uint32_t tick_count; // Counts RTC callbacks even when foreground events coalesce.
     uint8_t tick_frequency;
     uint8_t last_second;
     uint8_t subsecond;
@@ -292,6 +293,9 @@ bool movement_default_loop_handler(movement_event_t event, movement_settings_t *
 void movement_illuminate_led(void);
 
 void movement_request_tick_frequency(uint8_t freq);
+
+// Elapsed callbacks at the requested frequency; use differences while frequency is fixed.
+uint32_t movement_get_tick_count(void);
 
 // note: watch faces can only schedule a background task when in the foreground, since
 // movement will associate the scheduled task with the currently active face.

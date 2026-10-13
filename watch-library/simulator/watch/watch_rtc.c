@@ -34,6 +34,8 @@ static long tick_callbacks[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 static long alarm_interval_id = -1;
 static long alarm_timeout_id = -1;
 static double alarm_interval;
+static watch_date_time alarm_match_time;
+static watch_rtc_alarm_match alarm_match_mask;
 ext_irq_cb_t alarm_callback;
 ext_irq_cb_t btn_alarm_callback;
 ext_irq_cb_t a2_callback;
@@ -57,6 +59,9 @@ void watch_rtc_set_date_time(watch_date_time date_time) {
         const date = new Date(year, month - 1, day, hour, minute, second);
         return date - Date.now();
     }, date_time.reg);
+    // A clock adjustment changes when the next RTC match occurs.
+    if (alarm_match_mask != ALARM_MATCH_DISABLED)
+        watch_rtc_register_alarm_callback(alarm_callback, alarm_match_time, alarm_match_mask);
 }
 
 watch_date_time watch_rtc_get_date_time(void) {
@@ -127,11 +132,13 @@ void watch_rtc_disable_all_periodic_callbacks(void) {
 
 static void watch_invoke_alarm_interval_callback(void *userData) {
     if (alarm_callback) alarm_callback();
+    resume_main_loop();
 }
 
 static void watch_invoke_alarm_callback(void *userData) {
     if (alarm_callback) alarm_callback();
     alarm_interval_id = emscripten_set_interval(watch_invoke_alarm_interval_callback, alarm_interval, NULL);
+    resume_main_loop();
 }
 
 void watch_rtc_register_alarm_callback(ext_irq_cb_t callback, watch_date_time alarm_time, watch_rtc_alarm_match mask) {
@@ -175,14 +182,19 @@ void watch_rtc_register_alarm_callback(ext_irq_cb_t callback, watch_date_time al
             throw 'Invalid alarm match mask';
         }
 
-        return date - now;
+        date.setMilliseconds(0);
+        // Hardware raises the interrupt on the second following the match.
+        return date - (now + $0) + 1000;
     }, time_offset, alarm_time.reg, mask);
 
+    alarm_match_time = alarm_time;
+    alarm_match_mask = mask;
     alarm_callback = callback;
     alarm_timeout_id = emscripten_set_timeout(watch_invoke_alarm_callback, timeout, NULL);
 }
 
 void watch_rtc_disable_alarm_callback(void) {
+    alarm_match_mask = ALARM_MATCH_DISABLED;
     alarm_callback = NULL;
     alarm_interval = 0;
 

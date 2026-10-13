@@ -99,10 +99,24 @@
 #include <emscripten.h>
 #endif
 
+#ifndef MOVEMENT_WAKE_ON_ANY_BUTTON
+#define MOVEMENT_WAKE_ON_ANY_BUTTON false
+#endif
+
+// Preserve the library's ten-minute interval unless the project overrides it.
+#ifndef MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS
+#define MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS 600
+#endif
+
 movement_state_t movement_state;
+#define WAKE_MODE 1
+#define WAKE_LIGHT 2
+#define WAKE_ALARM 4
+static volatile uint8_t wake_buttons;
+static bool alarm_wake_release_pending;
 void * watch_face_contexts[MOVEMENT_NUM_FACES];
 watch_date_time scheduled_tasks[MOVEMENT_NUM_FACES];
-const int32_t movement_le_inactivity_deadlines[8] = {INT_MAX, 600, 3600, 7200, 21600, 43200, 86400, 604800};
+const int32_t movement_le_inactivity_deadlines[8] = {INT_MAX, MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS, 3600, 7200, 21600, 43200, 86400, 604800};
 const int16_t movement_timeout_inactivity_deadlines[4] = {60, 120, 300, 1800};
 movement_event_t event;
 
@@ -157,6 +171,11 @@ void cb_mode_btn_interrupt(void);
 void cb_light_btn_interrupt(void);
 void cb_alarm_btn_interrupt(void);
 void cb_alarm_btn_extwake(void);
+void cb_mode_btn_sleepwake(void);
+void cb_light_btn_sleepwake(void);
+void cb_alarm_btn_sleepwake(void);
+static bool _movement_replay_wake_button(const watch_face_t *wf, uint8_t pin, uint8_t wake_mask,
+                                        movement_event_type_t down, uint16_t *timestamp);
 void cb_alarm_fired(void);
 void cb_fast_tick(void);
 void cb_tick(void);
@@ -455,6 +474,7 @@ void app_setup(void) {
     }
     if (movement_state.le_mode_ticks != -1) {
         watch_disable_extwake_interrupt(BTN_ALARM);
+        watch_disable_button_wake_callbacks();
 
         watch_enable_external_interrupts();
         watch_register_interrupt_callback(BTN_MODE, cb_mode_btn_interrupt, INTERRUPT_TRIGGER_BOTH);
@@ -539,7 +559,9 @@ bool app_loop(void) {
     // if we have timed out of our low energy mode countdown, enter low energy mode.
     if (movement_state.le_mode_ticks == 0) {
         movement_state.le_mode_ticks = -1;
-        watch_register_extwake_callback(BTN_ALARM, cb_alarm_btn_extwake, true);
+        if (MOVEMENT_WAKE_ON_ANY_BUTTON)
+            watch_register_button_wake_callbacks(cb_mode_btn_sleepwake, cb_light_btn_sleepwake, cb_alarm_btn_sleepwake);
+        else watch_register_extwake_callback(BTN_ALARM, cb_alarm_btn_extwake, true);
         event.event_type = EVENT_NONE;
         event.subsecond = 0;
 
@@ -576,6 +598,19 @@ bool app_loop(void) {
         }
 
         event.event_type = EVENT_NONE;
+    }
+
+    // Deliver the wake press after peripherals and face state have been restored.
+    // Retain it even if the user released the button before wake-up completed.
+    if (wake_buttons & WAKE_MODE)
+        can_sleep = _movement_replay_wake_button(wf, BTN_MODE, WAKE_MODE,
+            EVENT_MODE_BUTTON_DOWN, &movement_state.mode_down_timestamp) && can_sleep;
+    if (wake_buttons & WAKE_LIGHT)
+        can_sleep = _movement_replay_wake_button(wf, BTN_LIGHT, WAKE_LIGHT,
+            EVENT_LIGHT_BUTTON_DOWN, &movement_state.light_down_timestamp) && can_sleep;
+    if (wake_buttons & WAKE_ALARM) {
+        alarm_wake_release_pending = watch_get_pin_level(BTN_ALARM);
+        wake_buttons &= ~WAKE_ALARM;
     }
 
     // if we have timed out of our timeout countdown, give the app a hint that they can resign.
@@ -666,22 +701,59 @@ static movement_event_type_t _figure_out_button_event(bool pin_level, movement_e
     }
 }
 
+static bool _movement_replay_wake_button(const watch_face_t *wf, uint8_t pin, uint8_t wake_mask,
+                                        movement_event_type_t down, uint16_t *timestamp) {
+    movement_event_t press = {
+        .event_type = _figure_out_button_event(true, down, timestamp),
+        .subsecond = movement_state.subsecond
+    };
+    bool can_sleep = wf->loop(press, &movement_state.settings, watch_face_contexts[movement_state.current_face_idx]);
+    wake_buttons &= ~wake_mask;
+    if (!watch_get_pin_level(pin)) {
+        press.event_type = _figure_out_button_event(false, down, timestamp);
+        can_sleep = wf->loop(press, &movement_state.settings, watch_face_contexts[movement_state.current_face_idx]) && can_sleep;
+    }
+    return can_sleep;
+}
+
 void cb_light_btn_interrupt(void) {
     bool pin_level = watch_get_pin_level(BTN_LIGHT);
     _movement_reset_inactivity_countdown();
+    if (wake_buttons & WAKE_LIGHT) return;
     event.event_type = _figure_out_button_event(pin_level, EVENT_LIGHT_BUTTON_DOWN, &movement_state.light_down_timestamp);
 }
 
 void cb_mode_btn_interrupt(void) {
     bool pin_level = watch_get_pin_level(BTN_MODE);
     _movement_reset_inactivity_countdown();
+    if (wake_buttons & WAKE_MODE) return;
     event.event_type = _figure_out_button_event(pin_level, EVENT_MODE_BUTTON_DOWN, &movement_state.mode_down_timestamp);
 }
 
 void cb_alarm_btn_interrupt(void) {
     bool pin_level = watch_get_pin_level(BTN_ALARM);
     _movement_reset_inactivity_countdown();
+    if (wake_buttons & WAKE_ALARM) return;
+    if (alarm_wake_release_pending) {
+        alarm_wake_release_pending = false;
+        if (!pin_level) return;
+    }
     event.event_type = _figure_out_button_event(pin_level, EVENT_ALARM_BUTTON_DOWN, &movement_state.alarm_down_timestamp);
+}
+
+void cb_mode_btn_sleepwake(void) {
+    wake_buttons |= WAKE_MODE;
+    _movement_reset_inactivity_countdown();
+}
+
+void cb_light_btn_sleepwake(void) {
+    wake_buttons |= WAKE_LIGHT;
+    _movement_reset_inactivity_countdown();
+}
+
+void cb_alarm_btn_sleepwake(void) {
+    wake_buttons |= WAKE_ALARM;
+    _movement_reset_inactivity_countdown();
 }
 
 void cb_alarm_btn_extwake(void) {
@@ -717,8 +789,15 @@ void cb_fast_tick(void) {
     }
 }
 
+uint32_t movement_get_tick_count(void) {
+    return movement_state.tick_count;
+}
+
 void cb_tick(void) {
-    event.event_type = EVENT_TICK;
+    movement_state.tick_count++;
+    // Preserve pending button events when the simulator renders slower than the RTC.
+    if (event.event_type == EVENT_NONE || event.event_type == EVENT_TICK)
+        event.event_type = EVENT_TICK;
     watch_date_time date_time = watch_rtc_get_date_time();
     if (date_time.unit.second != movement_state.last_second) {
         // TODO: can we consolidate these two ticks?

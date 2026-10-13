@@ -28,26 +28,16 @@
 #include "movement_faces.h"
 
 const watch_face_t watch_faces[] = {
-    simple_clock_face,
-    world_clock_face,
-    sunrise_sunset_face,
-    moon_phase_face,
-    stopwatch_face,
-    preferences_face,
-    set_time_face,
-    thermistor_readout_face,
-    voltage_face
+    france_clock_face,
+    finland_clock_face,
+    full_date_face,
+    set_time_face     // Accessible only through the unlock sequence
 };
 
 #define MOVEMENT_NUM_FACES (sizeof(watch_faces) / sizeof(watch_face_t))
 
-/* Determines what face to go to from the first face on long press of the Mode button.
- * Also excludes these faces from the normal rotation.
- * In the default firmware, this lets you access temperature and battery voltage with a long press of Mode.
- * Some folks also like to use this to hide the preferences and time set faces from the normal rotation.
- * If you don't want any faces to be excluded, set this to 0 and a long Mode press will have no effect.
- */
-#define MOVEMENT_SECONDARY_FACE_INDEX (MOVEMENT_NUM_FACES - 2) // or (0)
+// Keep the time/date editor outside the normal three-face rotation.
+#define MOVEMENT_SECONDARY_FACE_INDEX TRAVEL_CLOCK_SETTINGS_FACE_INDEX
 
 /* Custom hourly chime tune. Check movement_custom_signal_tunes.h for options. */
 #define SIGNAL_TUNE_DEFAULT
@@ -59,7 +49,7 @@ const watch_face_t watch_faces[] = {
 #define MOVEMENT_DEFAULT_RED_COLOR 0x0
 
 /* Set to true for 24h mode or false for 12h mode */
-#define MOVEMENT_DEFAULT_24H_MODE false
+#define MOVEMENT_DEFAULT_24H_MODE true
 
 /* Enable or disable the sound on mode button press */
 #define MOVEMENT_DEFAULT_BUTTON_SOUND true
@@ -76,15 +66,19 @@ const watch_face_t watch_faces[] = {
 /* Set the timeout before switching to low energy mode
  * Valid values are:
  * 0: Never
- * 1: 1 hour
- * 2: 2 hours
- * 3: 6 hours
- * 4: 12 hours
- * 5: 1 day
- * 6: 2 days
+ * 1: 30 seconds
+ * 2: 1 hour
+ * 3: 2 hours
+ * 4: 6 hours
+ * 5: 12 hours
+ * 6: 1 day
  * 7: 7 days
  */
 #define MOVEMENT_DEFAULT_LOW_ENERGY_INTERVAL 1
+#define MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS 30
+
+// Wake low-energy mode on any button and apply its normal action.
+#define MOVEMENT_WAKE_ON_ANY_BUTTON true
 
 /* Set the led duration
  * Valid values are:

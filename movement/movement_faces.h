@@ -25,6 +25,9 @@
 #ifndef MOVEMENT_FACES_H_
 #define MOVEMENT_FACES_H_
 
+#include "france_clock_face.h"
+#include "finland_clock_face.h"
+#include "full_date_face.h"
 #include "simple_clock_face.h"
 #include "close_enough_clock_face.h"
 #include "clock_face.h"

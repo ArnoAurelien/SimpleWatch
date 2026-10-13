@@ -1,5 +1,7 @@
 # Leave this line at the top of the file; it has all the watch library sources and includes.
 TOP = ../..
+# This project targets Sensor Watch Lite with the standard LCD.
+COLOR ?= RED
 include $(TOP)/make.mk
 
 # If you add any other subdirectories with header files you wish to include, add them after ../
@@ -48,6 +50,10 @@ SRCS += \
   ../lib/morsecalc/morsecalc_display.c \
   ../../littlefs/lfs.c \
   ../../littlefs/lfs_util.c \
+  ../watch_faces/clock/travel_clock.c \
+  ../watch_faces/clock/france_clock_face.c \
+  ../watch_faces/clock/finland_clock_face.c \
+  ../watch_faces/clock/full_date_face.c \
   ../movement.c \
   ../filesystem.c \
   ../shell.c \
