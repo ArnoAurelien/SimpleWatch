@@ -48,6 +48,7 @@ SRCS += \
   ../lib/morsecalc/morsecalc_display.c \
   ../../littlefs/lfs.c \
   ../../littlefs/lfs_util.c \
+  ../watch_faces/clock/travel_clock_face.c \
   ../movement.c \
   ../filesystem.c \
   ../shell.c \
