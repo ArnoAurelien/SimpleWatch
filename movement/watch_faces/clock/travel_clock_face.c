@@ -2,9 +2,27 @@
 #include "travel_clock_face.h"
 #include "watch_utility.h"
 
+#define UNLOCK_HZ 64
+#define HOLD_TICKS (3 * UNLOCK_HZ)
+#define WINDOW_TICKS (15 * UNLOCK_HZ)
+#define SETTINGS_FACE 3
+
 typedef struct {
     uint8_t index;
+    uint8_t step;
+    uint8_t pressed;
+    bool active;
+    bool failed;
+    uint32_t started_tick;
+    uint32_t down_tick;
 } travel_clock_state_t;
+
+static void reset_unlock(travel_clock_state_t *state) {
+    state->active = false;
+    state->step = 0;
+    state->failed = state->pressed != 0;
+    movement_request_tick_frequency(1);
+}
 
 // Both countries change at 01:00 UTC on the last Sunday of March/October.
 static bool summer_time(uint32_t timestamp) {
@@ -45,40 +63,89 @@ void travel_clock_face_setup(movement_settings_t *settings, uint8_t index, void 
 
 void travel_clock_face_activate(movement_settings_t *settings, void *context) {
     (void)settings;
-    (void)context;
-    movement_request_tick_frequency(1);
+    travel_clock_state_t *state = context;
+    state->pressed = 0;
+    reset_unlock(state);
     watch_clear_display();
     if (watch_tick_animation_is_running()) watch_stop_tick_animation();
 }
 
 bool travel_clock_face_loop(movement_event_t event, movement_settings_t *settings, void *context) {
     travel_clock_state_t *state = context;
+    uint32_t now = movement_get_tick_count();
+    if (state->active && now - state->started_tick >= WINDOW_TICKS) reset_unlock(state);
+
+    uint8_t button = 0;
+    bool down = false, up = false;
     switch (event.event_type) {
+        case EVENT_MODE_BUTTON_DOWN: button = 1; down = true; break;
+        case EVENT_LIGHT_BUTTON_DOWN: button = 2; down = true; movement_illuminate_led(); break;
+        case EVENT_ALARM_BUTTON_DOWN: button = 4; down = true; break;
         case EVENT_MODE_BUTTON_UP:
-        case EVENT_MODE_LONG_UP:
-            movement_move_to_face((state->index + 1) % 3);
-            break;
-        case EVENT_LIGHT_BUTTON_DOWN:
-            movement_illuminate_led();
-            break;
+        case EVENT_MODE_LONG_UP: button = 1; up = true; break;
         case EVENT_LIGHT_BUTTON_UP:
-        case EVENT_LIGHT_LONG_UP:
-            event.event_type = EVENT_LIGHT_BUTTON_UP;
-            movement_default_loop_handler(event, settings);
-            break;
-        case EVENT_ACTIVATE:
-        case EVENT_TICK:
-        case EVENT_LOW_ENERGY_UPDATE:
-            display(state, settings, event.event_type == EVENT_LOW_ENERGY_UPDATE);
-            break;
-        default:
-            break;
+        case EVENT_LIGHT_LONG_UP: button = 2; up = true; break;
+        case EVENT_ALARM_BUTTON_UP:
+        case EVENT_ALARM_LONG_UP: button = 4; up = true; break;
+        default: break;
     }
+
+    if (down) {
+        uint8_t pins = (watch_get_pin_level(BTN_MODE) ? 1 : 0) |
+                       (watch_get_pin_level(BTN_LIGHT) ? 2 : 0) |
+                       (watch_get_pin_level(BTN_ALARM) ? 4 : 0);
+        bool overlap = state->pressed != 0 || __builtin_popcount(pins) > 1;
+        state->pressed |= button;
+        if (overlap || state->failed) reset_unlock(state);
+        else if (!state->active && button == 1) {
+            state->active = true;
+            state->step = 0;
+            state->started_tick = state->down_tick = now;
+            movement_request_tick_frequency(UNLOCK_HZ);
+        } else if (state->active) {
+            if (button != (1u << state->step)) reset_unlock(state);
+            else state->down_tick = now;
+        }
+    }
+    if (up && button == 2) {
+        movement_event_t light_up = { .event_type = EVENT_LIGHT_BUTTON_UP };
+        movement_default_loop_handler(light_up, settings);
+    }
+    if (up) {
+        bool was_pressed = (state->pressed & button) != 0;
+        state->pressed &= ~button;
+        if (state->active && was_pressed) {
+            if (button == (1u << state->step) && now - state->down_tick >= HOLD_TICKS) {
+                if (++state->step == 3) {
+                    reset_unlock(state);
+                    movement_move_to_face(SETTINGS_FACE);
+                    return true;
+                }
+            } else {
+                bool normal_mode = state->step == 0 && button == 1;
+                reset_unlock(state);
+                if (normal_mode) {
+                    movement_move_to_face((state->index + 1) % 3);
+                    return true;
+                }
+            }
+        }
+        if (!state->pressed) state->failed = false;
+    }
+    // Simultaneous releases can coalesce into one event; physical levels let
+    // a failed chord recover as soon as every button is released.
+    if (state->failed && !watch_get_pin_level(BTN_MODE) &&
+        !watch_get_pin_level(BTN_LIGHT) && !watch_get_pin_level(BTN_ALARM)) {
+        state->pressed = 0;
+        state->failed = false;
+    }
+    if (event.event_type == EVENT_ACTIVATE || event.event_type == EVENT_LOW_ENERGY_UPDATE ||
+        (event.event_type == EVENT_TICK && (!state->active || event.subsecond == 0)))
+        display(state, settings, event.event_type == EVENT_LOW_ENERGY_UPDATE);
     return true;
 }
 
 void travel_clock_face_resign(movement_settings_t *settings, void *context) {
     (void)settings;
-    (void)context;
-    movement_request_tick_frequency(1);
+    reset_unlock(context);
 }
