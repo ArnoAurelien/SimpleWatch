@@ -103,6 +103,11 @@
 #define MOVEMENT_WAKE_ON_ANY_BUTTON false
 #endif
 
+// Preserve the library's ten-minute interval unless the project overrides it.
+#ifndef MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS
+#define MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS 600
+#endif
+
 movement_state_t movement_state;
 #define WAKE_MODE 1
 #define WAKE_LIGHT 2
@@ -111,7 +116,7 @@ static volatile uint8_t wake_buttons;
 static bool alarm_wake_release_pending;
 void * watch_face_contexts[MOVEMENT_NUM_FACES];
 watch_date_time scheduled_tasks[MOVEMENT_NUM_FACES];
-const int32_t movement_le_inactivity_deadlines[8] = {INT_MAX, 600, 3600, 7200, 21600, 43200, 86400, 604800};
+const int32_t movement_le_inactivity_deadlines[8] = {INT_MAX, MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS, 3600, 7200, 21600, 43200, 86400, 604800};
 const int16_t movement_timeout_inactivity_deadlines[4] = {60, 120, 300, 1800};
 movement_event_t event;
 

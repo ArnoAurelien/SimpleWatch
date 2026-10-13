@@ -104,9 +104,9 @@ const { chromium } = require('playwright');
         assert.equal((await screen()).header, date.header);
         await unlock(); assert.equal((await screen()).header, editor.header);
         await press('m'); // Exit the editor back to France.
-        await advance(598000);
+        await advance(28000);
         assert.match((await screen()).main.slice(4), /^\d{2}$/);
-        await advance(2000); // Cross the real ten-minute inactivity boundary.
+        await advance(2000); // Cross the real thirty-second inactivity boundary.
         assert.equal((await screen()).main.slice(4), '  ');
         const sleepingMinute = (await screen()).main.slice(0,4);
         await advance(60000);
@@ -128,7 +128,7 @@ const { chromium } = require('playwright');
         for (let view = 0; view < 3; view++) {
             for (const key of ['a', 'l', 'm']) {
                 await selectView(view);
-                await advance(600000);
+                await advance(30000);
                 if (view !== 2) assert.equal((await screen()).main.slice(4), '  ');
                 await page.keyboard.down(key); await advance(150);
                 if (key === 'l') assert((await screen()).light > 0);
@@ -143,7 +143,7 @@ const { chromium } = require('playwright');
         // Press and release in one JS task, before asynchronous C wake restores
         // normal callbacks: replay the stored press even though the pin is low.
         for (const key of ['m', 'l', 'a']) {
-            await selectView(0); await advance(600000);
+            await selectView(0); await advance(30000);
             await page.evaluate(key => {
                 document.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles:true}));
                 document.dispatchEvent(new KeyboardEvent('keyup', {key, bubbles:true}));
@@ -155,21 +155,21 @@ const { chromium } = require('playwright');
             await advance(1500);
         }
         // Holding LIGHT from sleep sustains illumination and keeps the view.
-        await selectView(0); await advance(600000);
+        await selectView(0); await advance(30000);
         await page.keyboard.down('l'); await advance(3500);
         assert((await screen()).light > 0);
         assert.equal((await screen()).header, france.header);
         await page.keyboard.up('l'); await advance(1500);
         assert.equal((await screen()).light, 0);
         // ALARM held from sleep still only wakes and does not light or change views.
-        await advance(600000); await press('a', 3500);
+        await advance(30000); await press('a', 3500);
         assert.equal((await screen()).header, france.header);
         assert.equal((await screen()).light, 0);
         // A waking MODE hold is the first hold of the existing unlock sequence.
-        await advance(600000); await unlock();
+        await advance(30000); await unlock();
         assert.equal((await screen()).header, editor.header);
         // Chords during wake still reset the unlock attempt.
-        await press('m'); await advance(600000);
+        await press('m'); await advance(30000);
         await page.evaluate(() => {
             for (const key of ['m','l'])
                 document.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles:true}));
@@ -182,7 +182,7 @@ const { chromium } = require('playwright');
         await advance(100); await press('a', 3200);
         assert.equal((await screen()).header, france.header);
         await unlock(); assert.equal((await screen()).header, editor.header);
-        console.log('PASS: ten-minute sleep, minute updates, all wake buttons on all views, immediate actions, quick taps, held LIGHT, unlock from sleep and wake chords');
+        console.log('PASS: thirty-second sleep, minute updates, all wake buttons on all views, immediate actions, quick taps, held LIGHT, unlock from sleep and wake chords');
         assert.deepEqual(errors, []);
         console.log('PASS: browser emulator views, LED, ALARM, unlock/reset cases, existing editor, entry from every view');
     } finally { await browser.close(); }

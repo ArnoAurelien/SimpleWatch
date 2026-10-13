@@ -4,7 +4,7 @@ The default firmware has three everyday views: France (`FR`), Finland (`FI`), an
 
 Each view has its own implementation: `france_clock_face.c`, `finland_clock_face.c`, and `full_date_face.c`. They share time conversion and button/unlock helpers in `travel_clock.c`. Display identity is independent of carousel position.
 
-MODE cycles the three views. ALARM has no everyday action. LIGHT illuminates the LED, including during the unlock sequence. The normal light duration and colors still apply. The original ten-minute low-energy timeout is enabled, and faces preserve the configured sleep interval. In low-energy mode, time views update once a minute with seconds blank; the date remains visible. Any button wakes the watch. The same MODE press cycles the view on release, LIGHT illuminates the display on press, and ALARM only wakes without changing the view or lighting the LED. A waking MODE hold can start the existing settings unlock sequence. The wake button is recorded before normal callbacks are restored, so even a quick tap released during wake-up is applied once.
+MODE cycles the three views. ALARM has no everyday action. LIGHT illuminates the LED, including during the unlock sequence. The normal light duration and colors still apply. The low-energy timeout is thirty seconds of inactivity, and faces preserve the configured sleep interval. In low-energy mode, time views update once a minute with seconds blank; the date remains visible. Any button wakes the watch. The same MODE press cycles the view on release, LIGHT illuminates the display on press, and ALARM only wakes without changing the view or lighting the LED. A waking MODE hold can start the existing settings unlock sequence. The wake button is recorded before normal callbacks are restored, so even a quick tap released during wake-up is applied once.
 
 Blanking numeric seconds is inherited from the original `simple_clock_face.c`: low-energy time updates occur once a minute. The original also uses a ticking LCD animation; these country faces leave the seconds area blank.
 
@@ -41,7 +41,7 @@ Run deterministic tests for exact hold/window boundaries, wrong order, overlaps,
 emmake make -C movement/tests COLOR=RED test
 ```
 
-The browser suite uses real emulator keyboard events and fake time to check view rotation, LED behavior, ALARM, unlock failures, unlock success from all views, and the editor's existing controls. It also crosses the full ten-minute timeout, verifies minute updates and each wake button on every view, checks same-press navigation/LED actions and fast taps released before wake-up completes, and tests held LIGHT, unlock directly from sleep, and overlapping wake presses. With Playwright 1.48+ and Chromium installed, and the server running:
+The browser suite uses real emulator keyboard events and fake time to check view rotation, LED behavior, ALARM, unlock failures, unlock success from all views, and the editor's existing controls. It also crosses the full thirty-second timeout, verifies minute updates and each wake button on every view, checks same-press navigation/LED actions and fast taps released before wake-up completes, and tests held LIGHT, unlock directly from sleep, and overlapping wake presses. With Playwright 1.48+ and Chromium installed, and the server running:
 
 ```sh
 node movement/tests/travel_clock_emulator.cjs

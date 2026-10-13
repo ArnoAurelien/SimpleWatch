@@ -66,7 +66,7 @@ const watch_face_t watch_faces[] = {
 /* Set the timeout before switching to low energy mode
  * Valid values are:
  * 0: Never
- * 1: 10 minutes
+ * 1: 30 seconds
  * 2: 1 hour
  * 3: 2 hours
  * 4: 6 hours
@@ -75,6 +75,7 @@ const watch_face_t watch_faces[] = {
  * 7: 7 days
  */
 #define MOVEMENT_DEFAULT_LOW_ENERGY_INTERVAL 1
+#define MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS 30
 
 // Wake low-energy mode on any button and apply its normal action.
 #define MOVEMENT_WAKE_ON_ANY_BUTTON true
