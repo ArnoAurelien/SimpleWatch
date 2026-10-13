@@ -1,4 +1,6 @@
 TOP = ../..
+# This project targets Sensor Watch Lite with the standard LCD.
+COLOR ?= RED
 include $(TOP)/make.mk
 INCLUDES += -I../ -I../watch_faces/clock/
 
@@ -11,5 +13,5 @@ TEST_SRCS = travel_clock_test.c \
 
 .PHONY: test
 test:
-	$(CC) $(INCLUDES) $(DEFINES) -Wall -Wextra -Wno-unused-parameter -sSINGLE_FILE=1 $(TEST_SRCS) -o /tmp/sensor-watch-clock-test.js
+	$(CC) $(INCLUDES) $(DEFINES) $(filter -D%,$(CFLAGS)) -Wall -Wextra -Wno-unused-parameter -sSINGLE_FILE=1 $(TEST_SRCS) -o /tmp/sensor-watch-clock-test.js
 	node /tmp/sensor-watch-clock-test.js

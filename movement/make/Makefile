@@ -1,5 +1,7 @@
 # Leave this line at the top of the file; it has all the watch library sources and includes.
 TOP = ../..
+# This project targets Sensor Watch Lite with the standard LCD.
+COLOR ?= RED
 include $(TOP)/make.mk
 
 # If you add any other subdirectories with header files you wish to include, add them after ../

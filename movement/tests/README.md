@@ -10,19 +10,31 @@ To open the unchanged time/date editor, hold MODE for at least three seconds and
 
 In the editor, LIGHT selects the field, ALARM adjusts it (hold to repeat), and MODE exits to France. The `ZO` field still describes the fixed UTC offset of the time entered in the RTC. Hardware defaults to `ZO = 0` (UTC), so enter UTC, or select the matching offset if entering local time: `1` for France winter time, `2` for France summer / Finland winter time, or `3` for Finland summer time. The RTC continues using that fixed offset; the displayed country times change automatically at summer-time boundaries. The emulator initially derives `ZO` from the browser's current offset.
 
-Build the simulator (select the color matching your physical board when building firmware):
+The project defaults to Sensor Watch Lite (`COLOR=RED`) and the standard LCD. RED selects inverted LED polarity and disables unsupported RTC frequency correction; no alternate LCD mapping is enabled.
+
+Build the firmware:
 
 ```sh
-emmake make -C movement/make COLOR=GREEN -j4
+make -C movement/make COLOR=RED -j4
+```
+
+The resulting flashable file is `movement/make/build/watch.uf2`.
+
+Build the simulator:
+
+```sh
+emmake make -C movement/make COLOR=RED -j4
 python3 -m http.server 8000 --directory movement/make/build-sim
 ```
+
+When switching from a previous GREEN build, add `-B` to the build command once to rebuild all objects with the RED flags; changing `COLOR` alone does not invalidate the existing object files.
 
 Open http://localhost:8000/watch.html. Keyboard shortcuts: `m` for MODE, `l` for LIGHT, `a` for ALARM.
 
 Run deterministic tests for exact hold/window boundaries, wrong order, overlaps, reset/retry, coalesced foreground ticks, all view layouts, face identity after reordering, preserved sleep settings, sleeping display updates, leap day, year rollover, summer-time transitions and non-UTC RTC settings:
 
 ```sh
-emmake make -C movement/tests COLOR=GREEN test
+emmake make -C movement/tests COLOR=RED test
 ```
 
 The browser suite uses real emulator keyboard events and fake time to check view rotation, LED behavior, ALARM, unlock failures, unlock success from all views, and the editor's existing controls. With Playwright 1.48+ and Chromium installed, and the server running:
