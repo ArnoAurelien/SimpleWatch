@@ -50,7 +50,7 @@ extern ext_irq_cb_t a4_callback;
   *             function returns true, the watch enters STANDBY mode until the next tick or other
   *             interrupt. This mode uses much less power than ACTIVE mode.
   *           - Sleep Mode is a special case of STANDBY mode. In this mode, the watch turns off
-  *             almost all peripherals (including the external interrupt controller), and disables
+  *             almost all peripherals (including the external interrupt controller by default), and disables
   *             all pins except for the external wake pins. In this mode the watch can only wake
   *             from the RTC alarm interrupt or an external wake pin (A2, A4 or the alarm button),
   *             but the display remains on and your app's state is retained. You can enter this
@@ -93,6 +93,16 @@ void watch_register_extwake_callback(uint8_t pin, ext_irq_cb_t callback, bool le
   */
 void watch_disable_extwake_interrupt(uint8_t pin);
 
+/** Configure all three buttons as asynchronous EIC wake sources for Sleep/Deep Sleep.
+ * The callbacks identify the wake button so the app can restore its normal action.
+ * The CPU and periodic RTC ticks remain asleep until a wake interrupt. Unused
+ * EIC inputs and its sampling clock stay off. This does not support BACKUP mode.
+ * Disable this configuration before restoring normal button callbacks.
+ * Battery current must be measured on hardware when using these wake sources.
+ */
+void watch_register_button_wake_callbacks(ext_irq_cb_t mode, ext_irq_cb_t light, ext_irq_cb_t alarm);
+void watch_disable_button_wake_callbacks(void);
+
 /** @brief Stores data in one of the RTC's backup registers, which retain their data in BACKUP mode.
   * @param data An unsigned 32 bit integer with the data you wish to store.
   * @param reg A register from 0-7.
@@ -112,6 +122,8 @@ uint32_t watch_get_backup_data(uint8_t reg);
   *          mode by pressing the ALARM button, if you registered an extwake callback on the ALARM button.
   *          Also note that when your app wakes from this sleep mode, your app_setup method will be called
   *          again, since this function will have disabled things you set up there.
+ *          With watch_register_button_wake_callbacks, all three buttons wake this mode
+ *          through the asynchronous EIC; its sampling clock and unused inputs remain off.
   *
   *          Note that to wake from either the ALARM button, the A2 interrupt or the A4 interrupt, you
   *          must first configure this by calling watch_register_extwake_callback.

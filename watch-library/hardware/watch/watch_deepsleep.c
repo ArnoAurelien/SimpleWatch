@@ -33,6 +33,70 @@
 #warning This board revision does not support external wake on BTN_ALARM, so watch_register_extwake_callback will not work with it. Use watch_register_interrupt_callback instead.
 #endif
 
+static bool button_wake_enabled;
+static volatile bool button_wake_pending;
+static ext_irq_cb_t button_wake_callbacks[3];
+static const uint8_t wake_button_pins[] = {BTN_MODE, BTN_LIGHT, BTN_ALARM};
+
+static void _watch_mode_wake(void) {
+    button_wake_pending = true;
+    if (button_wake_callbacks[0]) button_wake_callbacks[0]();
+}
+
+static void _watch_light_wake(void) {
+    button_wake_pending = true;
+    if (button_wake_callbacks[1]) button_wake_callbacks[1]();
+}
+
+static void _watch_alarm_wake(void) {
+    button_wake_pending = true;
+    if (button_wake_callbacks[2]) button_wake_callbacks[2]();
+}
+
+void watch_register_button_wake_callbacks(ext_irq_cb_t mode, ext_irq_cb_t light, ext_irq_cb_t alarm) {
+    button_wake_callbacks[0] = mode;
+    button_wake_callbacks[1] = light;
+    button_wake_callbacks[2] = alarm;
+    button_wake_pending = false;
+    watch_enable_external_interrupts();
+    const ext_irq_cb_t handlers[] = {_watch_mode_wake, _watch_light_wake, _watch_alarm_wake};
+    const uint8_t channels[] = {WATCH_BTN_MODE_EIC_CHANNEL, WATCH_BTN_LIGHT_EIC_CHANNEL, WATCH_BTN_ALARM_EIC_CHANNEL};
+    uint32_t configs[2] = {0, 0};
+    uint32_t mask = 0;
+    for (uint8_t i = 0; i < 3; i++) {
+        watch_register_interrupt_callback(wake_button_pins[i], handlers[i], INTERRUPT_TRIGGER_RISING);
+        configs[channels[i] / 8] |= EIC_CONFIG_SENSE0(INTERRUPT_TRIGGER_RISING) << (4 * (channels[i] % 8));
+        mask |= 1ul << channels[i];
+    }
+
+    // Asynchronous edge detection works in STANDBY without a sample clock.
+    hri_eic_clear_CTRLA_ENABLE_bit(EIC);
+    hri_eic_wait_for_sync(EIC, EIC_SYNCBUSY_ENABLE);
+    // All unused sense/filter paths remain disabled.
+    hri_eic_write_CONFIG_reg(EIC, 0, configs[0]);
+    hri_eic_write_CONFIG_reg(EIC, 1, configs[1]);
+    hri_eic_write_ASYNCH_reg(EIC, mask);
+    hri_eic_write_EVCTRL_reg(EIC, 0);
+    hri_eic_clear_INTEN_reg(EIC, 0xFFFF);
+    hri_eic_clear_INTFLAG_reg(EIC, 0xFFFF);
+    hri_eic_set_INTEN_reg(EIC, mask);
+    hri_eic_set_CTRLA_ENABLE_bit(EIC);
+    hri_eic_wait_for_sync(EIC, EIC_SYNCBUSY_ENABLE);
+    button_wake_enabled = true;
+    hri_gclk_write_PCHCTRL_reg(GCLK, EIC_GCLK_ID, 0);
+}
+
+void watch_disable_button_wake_callbacks(void) {
+    if (!button_wake_enabled) return;
+    // Restore the clock before resetting the enable-protected EIC registers.
+    hri_gclk_write_PCHCTRL_reg(GCLK, EIC_GCLK_ID,
+        GCLK_PCHCTRL_GEN_GCLK3_Val | (1 << GCLK_PCHCTRL_CHEN_Pos));
+    watch_disable_external_interrupts();
+    button_wake_enabled = false;
+    for (uint8_t i = 0; i < 3; i++) button_wake_callbacks[i] = NULL;
+    button_wake_pending = false;
+}
+
 void watch_register_extwake_callback(uint8_t pin, ext_irq_cb_t callback, bool level) {
     uint32_t pinmux;
     hri_rtc_tampctrl_reg_t config = RTC->MODE2.TAMPCTRL.reg;
@@ -128,7 +192,15 @@ uint32_t watch_get_backup_data(uint8_t reg) {
 
 static void _watch_disable_all_pins_except_rtc(void) {
     uint32_t config = RTC->MODE0.TAMPCTRL.reg;
+    uint32_t porta_pins_to_disable = 0xFFFFFFFB; // Retain the RTC ALARM pin.
     uint32_t portb_pins_to_disable = 0xFFFFFFFF;
+    if (button_wake_enabled) {
+        for (uint8_t i = 0; i < 3; i++) {
+            uint8_t pin = wake_button_pins[i];
+            if (pin < 32) porta_pins_to_disable &= ~(1ul << pin);
+            else portb_pins_to_disable &= ~(1ul << (pin % 32));
+        }
+    }
 
     // if there's an action set on RTC/IN[0], leave PB00 configured
     if (config & RTC_TAMPCTRL_IN0ACT_Msk) portb_pins_to_disable &= 0xFFFFFFFE;
@@ -136,7 +208,7 @@ static void _watch_disable_all_pins_except_rtc(void) {
     if (config & RTC_TAMPCTRL_IN1ACT_Msk) portb_pins_to_disable &= 0xFFFFFFFB;
 
     // port A: always keep PA02 configured as-is; that's our ALARM button.
-    gpio_set_port_direction(0, 0xFFFFFFFB, GPIO_DIRECTION_OFF);
+    gpio_set_port_direction(0, porta_pins_to_disable, GPIO_DIRECTION_OFF);
     // port B: disable all pins we didn't save above.
     gpio_set_port_direction(1, portb_pins_to_disable, GPIO_DIRECTION_OFF);
 }
@@ -144,7 +216,7 @@ static void _watch_disable_all_pins_except_rtc(void) {
 static void _watch_disable_all_peripherals_except_slcd(void) {
     _watch_disable_tcc();
     watch_disable_adc();
-    watch_disable_external_interrupts();
+    if (!button_wake_enabled) watch_disable_external_interrupts();
     watch_disable_i2c();
     // TODO: replace this with a proper function when we remove the debug UART
     SERCOM3->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE;
@@ -169,8 +241,16 @@ void watch_enter_sleep_mode(void) {
     // disable all pins
     _watch_disable_all_pins_except_rtc();
 
-    // enter standby (4); we basically hang out here until an interrupt wakes us.
-    sleep(4);
+    // Don't lose a button interrupt delivered while preparing to enter STANDBY.
+    if (button_wake_enabled) {
+        uint32_t interrupt_mask = __get_PRIMASK();
+        __disable_irq();
+        if (!button_wake_pending) sleep(4);
+        __set_PRIMASK(interrupt_mask);
+        button_wake_pending = false;
+    } else {
+        sleep(4);
+    }
 
     // and we awake! re-enable the brownout detector and SysTick interrupt
     SUPC->INTENSET.bit.BOD33DET = 1;

@@ -33,6 +33,24 @@
 #endif
 
 static uint32_t watch_backup_data[8];
+static bool button_wake_enabled;
+
+void watch_register_button_wake_callbacks(ext_irq_cb_t mode, ext_irq_cb_t light, ext_irq_cb_t alarm) {
+    button_wake_enabled = true;
+    watch_enable_external_interrupts();
+    watch_register_interrupt_callback(BTN_MODE, mode, INTERRUPT_TRIGGER_RISING);
+    watch_register_interrupt_callback(BTN_LIGHT, light, INTERRUPT_TRIGGER_RISING);
+    watch_register_interrupt_callback(BTN_ALARM, alarm, INTERRUPT_TRIGGER_RISING);
+}
+
+void watch_disable_button_wake_callbacks(void) {
+    if (!button_wake_enabled) return;
+    watch_register_interrupt_callback(BTN_MODE, NULL, INTERRUPT_TRIGGER_NONE);
+    watch_register_interrupt_callback(BTN_LIGHT, NULL, INTERRUPT_TRIGGER_NONE);
+    watch_register_interrupt_callback(BTN_ALARM, NULL, INTERRUPT_TRIGGER_NONE);
+    button_wake_enabled = false;
+}
+
 void watch_register_extwake_callback(uint8_t pin, ext_irq_cb_t callback, bool level) {
     if (pin == BTN_ALARM) {
         watch_enable_external_interrupts();
@@ -62,8 +80,10 @@ uint32_t watch_get_backup_data(uint8_t reg) {
 
 void watch_enter_sleep_mode(void) {
     watch_rtc_disable_all_periodic_callbacks();
-    watch_register_interrupt_callback(BTN_MODE, NULL, INTERRUPT_TRIGGER_NONE);
-    watch_register_interrupt_callback(BTN_LIGHT, NULL, INTERRUPT_TRIGGER_NONE);
+    if (!button_wake_enabled) {
+        watch_register_interrupt_callback(BTN_MODE, NULL, INTERRUPT_TRIGGER_NONE);
+        watch_register_interrupt_callback(BTN_LIGHT, NULL, INTERRUPT_TRIGGER_NONE);
+    }
     // Suspend the C runloop until a wake input or RTC alarm resolves it.
     main_loop_wait_for_interrupt();
 
