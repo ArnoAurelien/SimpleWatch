@@ -6,6 +6,8 @@
 #define HOLD_TICKS (3 * UNLOCK_HZ)
 #define WINDOW_TICKS (15 * UNLOCK_HZ)
 
+uint8_t travel_clock_return_face = TRAVEL_CLOCK_FRANCE_FACE_INDEX;
+
 static void reset_unlock(travel_clock_state_t *state) {
     state->active = false;
     state->step = 0;
@@ -39,13 +41,15 @@ void travel_clock_display_time(const char *label, watch_date_time local, bool lo
     watch_display_string(buf, 0);
 }
 
-void travel_clock_setup(void **context) {
+void travel_clock_setup(void **context, uint8_t mode_target) {
     if (*context == NULL) *context = calloc(1, sizeof(travel_clock_state_t));
+    ((travel_clock_state_t *)*context)->mode_target = mode_target;
 }
 
 void travel_clock_activate(void *context) {
     travel_clock_state_t *state = context;
     state->pressed = 0;
+    state->alarm_tapped = false;
     reset_unlock(state);
     watch_clear_display();
     if (watch_tick_animation_is_running()) watch_stop_tick_animation();
@@ -95,6 +99,8 @@ bool travel_clock_handle_event(movement_event_t event, movement_settings_t *sett
     if (up) {
         bool was_pressed = (state->pressed & button) != 0;
         state->pressed &= ~button;
+        if (event.event_type == EVENT_ALARM_BUTTON_UP && was_pressed && !state->active && !state->failed)
+            state->alarm_tapped = true;
         if (state->active && was_pressed) {
             if (button == (1u << state->step) && now - state->down_tick >= HOLD_TICKS) {
                 if (++state->step == 3) {
@@ -106,7 +112,7 @@ bool travel_clock_handle_event(movement_event_t event, movement_settings_t *sett
                 bool normal_mode = state->step == 0 && button == 1;
                 reset_unlock(state);
                 if (normal_mode) {
-                    movement_move_to_next_face();
+                    movement_move_to_face(state->mode_target);
                     return false;
                 }
             }
