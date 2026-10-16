@@ -56,9 +56,14 @@ const { chromium } = require('playwright');
         await press('m'); const finland = await screen();
         assert.equal(finland.main.slice(0,4), '1534'); assert.equal(finland.day, '  ');
         assert.equal(finland.header, 'AEFG/EF');
-        await press('m'); const date = await screen();
-        assert.equal(date.main, '072026'); assert.equal(date.day, ' 1'); assert(!date.colon);
         await press('m'); assert.equal((await screen()).header, france.header);
+        // A short ALARM press shows the date for ten seconds; another press restarts the countdown.
+        await press('a'); const date = await screen();
+        assert.equal(date.main, '072026'); assert.equal(date.day, ' 1'); assert(!date.colon);
+        await advance(7000); assert.equal((await screen()).header, date.header);
+        await press('a'); await advance(8000); assert.equal((await screen()).header, date.header);
+        await advance(1500); assert.equal((await screen()).header, france.header);
+        await press('a'); await press('m'); assert.equal((await screen()).header, france.header);
         await press('a', 4000); assert.equal((await screen()).header, france.header);
         await page.keyboard.down('l'); await advance(100);
         assert((await screen()).light > 0); assert.equal((await screen()).header, france.header);
@@ -100,7 +105,7 @@ const { chromium } = require('playwright');
         console.log('PASS: emulator unlock and editor controls');
         // The unlock must also work from Finland and date views.
         await press('m'); await unlock(); assert.equal((await screen()).header, editor.header);
-        await press('m'); await press('m'); await press('m');
+        await press('m'); await press('a');
         assert.equal((await screen()).header, date.header);
         await unlock(); assert.equal((await screen()).header, editor.header);
         await press('m'); // Exit the editor back to France.
@@ -112,11 +117,11 @@ const { chromium } = require('playwright');
         await advance(60000);
         assert.notEqual((await screen()).main.slice(0,4), sleepingMinute);
         await press('a');
-        assert.equal((await screen()).header, france.header);
-        assert.match((await screen()).main.slice(4), /^\d{2}$/);
+        assert.equal((await screen()).header, date.header);
         assert.equal((await screen()).light, 0);
+        await press('m'); assert.equal((await screen()).header, france.header);
 
-        const headers = [france.header, finland.header, date.header];
+        const headers = [france.header, finland.header];
         async function selectView(index) {
             for (let attempts = 0; attempts < 3; attempts++) {
                 if ((await screen()).header === headers[index]) return;
@@ -124,16 +129,17 @@ const { chromium } = require('playwright');
             }
             assert.equal((await screen()).header, headers[index]);
         }
-        // Every wake button works on every view and performs its action once.
-        for (let view = 0; view < 3; view++) {
+        // Every wake button works on both clocks and performs its action once;
+        // ALARM shows the date, which cannot sleep because it times out first.
+        for (let view = 0; view < 2; view++) {
             for (const key of ['a', 'l', 'm']) {
                 await selectView(view);
                 await advance(30000);
-                if (view !== 2) assert.equal((await screen()).main.slice(4), '  ');
+                assert.equal((await screen()).main.slice(4), '  ');
                 await page.keyboard.down(key); await advance(150);
                 if (key === 'l') assert((await screen()).light > 0);
                 await page.keyboard.up(key); await advance(150);
-                assert.equal((await screen()).header, headers[key === 'm' ? (view + 1) % 3 : view]);
+                assert.equal((await screen()).header, key === 'a' ? date.header : headers[key === 'm' ? 1 - view : view]);
                 if ((await screen()).header !== date.header)
                     assert.match((await screen()).main.slice(4), /^\d{2}$/);
                 if (key === 'a') assert.equal((await screen()).light, 0);
@@ -149,8 +155,8 @@ const { chromium } = require('playwright');
                 document.dispatchEvent(new KeyboardEvent('keyup', {key, bubbles:true}));
             }, key);
             await advance(150);
-            assert.equal((await screen()).header, headers[key === 'm' ? 1 : 0]);
-            assert.match((await screen()).main.slice(4), /^\d{2}$/);
+            assert.equal((await screen()).header, key === 'm' ? headers[1] : key === 'a' ? date.header : headers[0]);
+            if (key !== 'a') assert.match((await screen()).main.slice(4), /^\d{2}$/);
             assert.equal((await screen()).light > 0, key === 'l');
             await advance(1500);
         }
@@ -161,7 +167,7 @@ const { chromium } = require('playwright');
         assert.equal((await screen()).header, france.header);
         await page.keyboard.up('l'); await advance(1500);
         assert.equal((await screen()).light, 0);
-        // ALARM held from sleep still only wakes and does not light or change views.
+        // ALARM held from sleep wakes without showing the date, lighting the LED or changing views.
         await advance(30000); await press('a', 3500);
         assert.equal((await screen()).header, france.header);
         assert.equal((await screen()).light, 0);

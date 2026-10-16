@@ -31,7 +31,6 @@ const int16_t movement_timezone_offsets[] = {0, 60, 120, 180};
 
 void movement_request_tick_frequency(uint8_t hz) { frequency = hz; }
 void movement_move_to_face(uint8_t index) { next_face = index; }
-void movement_move_to_next_face(void) { next_face = (active_face_position + 1) % 3; }
 void movement_illuminate_led(void) { led_calls++; }
 bool movement_default_loop_handler(movement_event_t e, movement_settings_t *s) { (void)e; (void)s; return true; }
 watch_date_time watch_rtc_get_date_time(void) { return rtc; }
@@ -56,6 +55,7 @@ static void send(uint8_t type) {
 static void ticks(int count) { while (count--) { tick_count++; send(EVENT_TICK); } }
 static void fresh(uint8_t index) {
     memset(&state, 0, sizeof(state)); active_face_position = index;
+    state.mode_target = index == 0 ? 1 : 0;
     active_face = &faces[index];
     next_face = -1; led_calls = 0; pins = 0;
     active_face->activate(&settings, &state);
@@ -74,17 +74,40 @@ static void expect_display(uint8_t index, uint32_t utc, const char *expected) {
     assert(strcmp(screen, expected) == 0);
     assert(colon == (index != 2));
 }
+static void advance(uint32_t seconds) {
+    rtc = watch_utility_date_time_from_unix_time(watch_utility_date_time_to_unix_time(rtc, 0) + seconds, 0);
+}
+static void tap_alarm(void) { hold(EVENT_ALARM_BUTTON_DOWN, EVENT_ALARM_BUTTON_UP, 10); }
 int main(void) {
     rtc = watch_utility_date_time_from_unix_time(1767225600, 0);
     for (int i = 0; i < 3; i++) {
+        travel_clock_return_face = 1;
         fresh(i); hold(EVENT_MODE_BUTTON_DOWN, EVENT_MODE_BUTTON_UP, 10);
-        assert(next_face == (i + 1) % 3);
+        assert(next_face == (i == 0 ? 1 : 0 + (i == 2)));
         fresh(i); unlock(); assert(next_face == 3); assert(frequency == 1);
         fresh(i); hold(EVENT_ALARM_BUTTON_DOWN, EVENT_ALARM_LONG_UP, 300);
         assert(next_face == -1 && led_calls == 0);
         hold(EVENT_LIGHT_BUTTON_DOWN, EVENT_LIGHT_LONG_UP, 300);
         assert(next_face == -1 && led_calls == 1);
+        // A short ALARM press opens the date from the clocks and is a no-move refresh on the date.
+        fresh(i); tap_alarm();
+        if (i < 2) assert(next_face == 2 && travel_clock_return_face == i);
+        else assert(next_face == -1);
     }
+    // The date returns after ten seconds, and each ALARM tap restarts the countdown.
+    travel_clock_return_face = 1;
+    fresh(2); advance(9); ticks(1); assert(next_face == -1);
+    advance(1); ticks(1); assert(next_face == 1);
+    fresh(2); advance(9); tap_alarm(); advance(9); ticks(1); assert(next_face == -1);
+    advance(1); ticks(1); assert(next_face == 1);
+    fresh(2); advance(10); send(EVENT_LOW_ENERGY_UPDATE); assert(next_face == 1);
+    // MODE on the date returns to the clock that opened it.
+    travel_clock_return_face = 0;
+    fresh(2); send(EVENT_MODE_BUTTON_DOWN); advance(11); ticks(1); assert(next_face == -1);
+    send(EVENT_MODE_BUTTON_UP); assert(next_face == 0);
+    // ALARM replayed after waking opens the date; a hold never does.
+    fresh(1); send(EVENT_ALARM_BUTTON_DOWN); send(EVENT_ALARM_BUTTON_UP); assert(next_face == 2);
+    fresh(1); hold(EVENT_ALARM_BUTTON_DOWN, EVENT_ALARM_LONG_UP, 300); assert(next_face == -1);
     // MODE held for just less than three seconds changes view, never opens settings.
     fresh(0); hold(EVENT_MODE_BUTTON_DOWN, EVENT_MODE_LONG_UP, HOLD_TICKS - 1);
     assert(next_face == 1);
@@ -127,6 +150,7 @@ int main(void) {
     assert(state.step == 1); tick_count += WINDOW_TICKS; send(EVENT_LIGHT_BUTTON_DOWN);
     assert(!state.active && next_face == -1); send(EVENT_LIGHT_BUTTON_UP); unlock(); assert(next_face == 3);
     // Face setup/activation must preserve the configured deep-sleep interval.
+    rtc = watch_utility_date_time_from_unix_time(1767225600, 0);
     for (uint8_t interval = 1; interval <= 7; interval++) {
         settings.bit.le_interval = interval;
         for (uint8_t index = 0; index < 3; index++) {
