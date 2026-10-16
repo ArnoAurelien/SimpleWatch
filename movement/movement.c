@@ -113,7 +113,6 @@ movement_state_t movement_state;
 #define WAKE_LIGHT 2
 #define WAKE_ALARM 4
 static volatile uint8_t wake_buttons;
-static bool alarm_wake_release_pending;
 void * watch_face_contexts[MOVEMENT_NUM_FACES];
 watch_date_time scheduled_tasks[MOVEMENT_NUM_FACES];
 const int32_t movement_le_inactivity_deadlines[8] = {INT_MAX, MOVEMENT_LOW_ENERGY_INTERVAL_1_SECONDS, 3600, 7200, 21600, 43200, 86400, 604800};
@@ -608,10 +607,9 @@ bool app_loop(void) {
     if (wake_buttons & WAKE_LIGHT)
         can_sleep = _movement_replay_wake_button(wf, BTN_LIGHT, WAKE_LIGHT,
             EVENT_LIGHT_BUTTON_DOWN, &movement_state.light_down_timestamp) && can_sleep;
-    if (wake_buttons & WAKE_ALARM) {
-        alarm_wake_release_pending = watch_get_pin_level(BTN_ALARM);
-        wake_buttons &= ~WAKE_ALARM;
-    }
+    if (wake_buttons & WAKE_ALARM)
+        can_sleep = _movement_replay_wake_button(wf, BTN_ALARM, WAKE_ALARM,
+            EVENT_ALARM_BUTTON_DOWN, &movement_state.alarm_down_timestamp) && can_sleep;
 
     // if we have timed out of our timeout countdown, give the app a hint that they can resign.
     if (movement_state.timeout_ticks == 0) {
@@ -734,10 +732,6 @@ void cb_alarm_btn_interrupt(void) {
     bool pin_level = watch_get_pin_level(BTN_ALARM);
     _movement_reset_inactivity_countdown();
     if (wake_buttons & WAKE_ALARM) return;
-    if (alarm_wake_release_pending) {
-        alarm_wake_release_pending = false;
-        if (!pin_level) return;
-    }
     event.event_type = _figure_out_button_event(pin_level, EVENT_ALARM_BUTTON_DOWN, &movement_state.alarm_down_timestamp);
 }
 
